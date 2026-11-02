@@ -5,7 +5,9 @@
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -26,12 +28,23 @@
     "test": "npm run build && node --test test/*.test.mjs",
     "prepublishOnly": "npm run test"
   },
-  "keywords": ["error-reporting", "telegram", "alerts", "nextjs", "monitoring", "error-tracking", "instrumentation", "onRequestError"],
+  "keywords": [
+    "error-reporting",
+    "telegram",
+    "alerts",
+    "nextjs",
+    "monitoring",
+    "error-tracking",
+    "instrumentation",
+    "onRequestError"
+  ],
   "peerDependencies": {
     "react": "^18.3.0 || ^19.0.0"
   },
   "peerDependenciesMeta": {
-    "react": { "optional": true }
+    "react": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -39,5 +52,10 @@
     "react": "^19.0.0",
     "tsup": "^8.3.0",
     "typescript": "^5.6.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iselldata/watchtower.git"
+  },
+  "homepage": "https://github.com/iselldata/watchtower#readme"
 }
