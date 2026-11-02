@@ -79,3 +79,33 @@ export function GlobalErrorPage({ background = "#ffffff", color = "#111827", ...
     </html>
   );
 }
+
+// Mounted once in the root layout: tells the app's /api/report-error about errors on the page that no error screen would see, such as a
+// button handler that throws or a promise nobody caught. It skips what is not our problem (browser extensions, a lost connection),
+// sends each message once, and no more than five a page.
+const NOISE = [/ResizeObserver loop/i, /^Script error\.?$/i, /Failed to fetch/i, /Load failed/i, /NetworkError/i, /network request failed/i, /The operation was aborted/i, /AbortError/i, /Non-Error promise rejection/i];
+
+export function WatchtowerListener({ endpoint = "/api/report-error" }: { endpoint?: string }) {
+  useEffect(() => {
+    const sent = new Set<string>();
+    const report = (message: string, stack: string | undefined, source: string | undefined) => {
+      if (sent.size >= 5 || sent.has(message) || NOISE.some((n) => n.test(message))) return;
+      // An error from a script that is not ours (an extension, an injected ad) is not ours to fix.
+      if (source && !source.startsWith(location.origin) && !source.startsWith("webpack") && source !== "") return;
+      sent.add(message);
+      tell({ name: "Error", message, stack } as Error, `${location.pathname} (uncaught)`, endpoint);
+    };
+    const onError = (e: ErrorEvent) => report(e.message || String(e.error), e.error?.stack, e.filename);
+    const onRejection = (e: PromiseRejectionEvent) => {
+      const r = e.reason;
+      report(r instanceof Error ? r.message : String(r), r instanceof Error ? r.stack : undefined, undefined);
+    };
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, [endpoint]);
+  return null;
+}

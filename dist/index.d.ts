@@ -25,6 +25,7 @@ declare function createWatchtower(options?: WatchtowerOptions): {
         routePath?: string;
         routeType?: string;
     }) => void;
+    watchConsole: () => void;
 };
 declare const reportError: (where: string, error: unknown, extra?: Record<string, unknown>) => void;
 declare const reportRejected: (where: string, issues: Issue[]) => void;
@@ -39,5 +40,6 @@ declare const onRequestError: (error: unknown, request: {
     routePath?: string;
     routeType?: string;
 }) => void;
+declare const watchConsole: () => void;
 
-export { type Issue, type Kind, type WatchtowerOptions, createWatchtower, handleBrowserErrorReport, handleErrorReportTest, onRequestError, reportBrowserError, reportError, reportRejected };
+export { type Issue, type Kind, type WatchtowerOptions, createWatchtower, handleBrowserErrorReport, handleErrorReportTest, onRequestError, reportBrowserError, reportError, reportRejected, watchConsole };

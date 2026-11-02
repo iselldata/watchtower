@@ -1,1 +1,1 @@
-export { handleErrorReportTest as GET, handleBrowserErrorReport as POST, onRequestError } from './index.js';
+export { handleErrorReportTest as GET, handleBrowserErrorReport as POST, onRequestError, watchConsole } from './index.js';

@@ -93,7 +93,9 @@ export function createWatchtower(options: WatchtowerOptions = {}) {
 
   function tell(kind: Kind, fields: Record<string, unknown>) {
     if (!token() || !chat()) return;
-    const key = `${kind}|${cut(fields.where, 80)}|${cut(fields.message, 60)}|${JSON.stringify(fields.issues ?? "")}`.slice(0, 300);
+    // A crash is the same problem wherever it surfaced (the route that failed, the log line that mentioned it), so it is counted by its
+    // message; a refused request is told apart by the route and the fields.
+    const key = (kind === "rejected" ? `${kind}|${cut(fields.where, 80)}|${JSON.stringify(fields.issues ?? "")}` : `${kind}|${cut(fields.message, 120)}`).slice(0, 300);
     const turn = allowed(key);
     if (!turn.send) return;
     const label = kind === "error" ? "ERROR on the server" : kind === "browser" ? "CRASH on a phone or browser" : "REFUSED a request";
@@ -168,9 +170,31 @@ export function createWatchtower(options: WatchtowerOptions = {}) {
     reportError(`${request.method} ${context.routePath ?? request.path}`, error, { routeType: context.routeType, routerKind: context.routerKind });
   }
 
-  return { reportError, reportRejected, reportBrowserError, handleBrowserErrorReport, handleErrorReportTest, onRequestError };
+  // Many routes catch their own errors, log them with console.error and answer 500, which Next counts as handled, so onRequestError never
+  // sees them. This listens to console.error instead: whenever an Error is logged, it is reported as well as logged. Call it once when the
+  // server starts (instrumentation.ts register). Our own lines, which start with [error], [rejected], [browser] or [telegram], are skipped.
+  let watching = false;
+  function watchConsole() {
+    if (watching) return;
+    watching = true;
+    const original = console.error.bind(console);
+    console.error = (...args: unknown[]) => {
+      original(...args);
+      try {
+        if (typeof args[0] === "string" && /^\[(error|rejected|browser|telegram)\]/.test(args[0])) return;
+        const error = args.find((a) => a instanceof Error);
+        if (!error) return;
+        const label = typeof args[0] === "string" ? args[0].replace(/[\s:]+$/, "") : "logged error";
+        reportError(label, error, { logged: true });
+      } catch {
+        // Reporting must never break the logging it listens to.
+      }
+    };
+  }
+
+  return { reportError, reportRejected, reportBrowserError, handleBrowserErrorReport, handleErrorReportTest, onRequestError, watchConsole };
 }
 
 // The one most apps need, reading its keys from the environment.
 const watchtower = createWatchtower();
-export const { reportError, reportRejected, reportBrowserError, handleBrowserErrorReport, handleErrorReportTest, onRequestError } = watchtower;
+export const { reportError, reportRejected, reportBrowserError, handleBrowserErrorReport, handleErrorReportTest, onRequestError, watchConsole } = watchtower;

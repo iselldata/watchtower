@@ -40,7 +40,32 @@ function ErrorPage({
 function GlobalErrorPage({ background = "#ffffff", color = "#111827", ...props }) {
   return /* @__PURE__ */ jsx("html", { lang: "en", children: /* @__PURE__ */ jsx("body", { style: { margin: 0, fontFamily: "system-ui, sans-serif", background, color }, children: /* @__PURE__ */ jsx(ErrorPage, { ...props, where: props.where ?? "global" }) }) });
 }
+var NOISE = [/ResizeObserver loop/i, /^Script error\.?$/i, /Failed to fetch/i, /Load failed/i, /NetworkError/i, /network request failed/i, /The operation was aborted/i, /AbortError/i, /Non-Error promise rejection/i];
+function WatchtowerListener({ endpoint = "/api/report-error" }) {
+  useEffect(() => {
+    const sent = /* @__PURE__ */ new Set();
+    const report = (message, stack, source) => {
+      if (sent.size >= 5 || sent.has(message) || NOISE.some((n) => n.test(message))) return;
+      if (source && !source.startsWith(location.origin) && !source.startsWith("webpack") && source !== "") return;
+      sent.add(message);
+      tell({ name: "Error", message, stack }, `${location.pathname} (uncaught)`, endpoint);
+    };
+    const onError = (e) => report(e.message || String(e.error), e.error?.stack, e.filename);
+    const onRejection = (e) => {
+      const r = e.reason;
+      report(r instanceof Error ? r.message : String(r), r instanceof Error ? r.stack : void 0, void 0);
+    };
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, [endpoint]);
+  return null;
+}
 export {
   ErrorPage,
-  GlobalErrorPage
+  GlobalErrorPage,
+  WatchtowerListener
 };

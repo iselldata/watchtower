@@ -5,8 +5,9 @@ import {
   onRequestError,
   reportBrowserError,
   reportError,
-  reportRejected
-} from "./chunk-44HE7URX.js";
+  reportRejected,
+  watchConsole
+} from "./chunk-VYTZAB5W.js";
 export {
   createWatchtower,
   handleBrowserErrorReport,
@@ -14,5 +15,6 @@ export {
   onRequestError,
   reportBrowserError,
   reportError,
-  reportRejected
+  reportRejected,
+  watchConsole
 };

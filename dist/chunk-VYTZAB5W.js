@@ -58,7 +58,7 @@ function createWatchtower(options = {}) {
   }
   function tell(kind, fields) {
     if (!token() || !chat()) return;
-    const key = `${kind}|${cut(fields.where, 80)}|${cut(fields.message, 60)}|${JSON.stringify(fields.issues ?? "")}`.slice(0, 300);
+    const key = (kind === "rejected" ? `${kind}|${cut(fields.where, 80)}|${JSON.stringify(fields.issues ?? "")}` : `${kind}|${cut(fields.message, 120)}`).slice(0, 300);
     const turn = allowed(key);
     if (!turn.send) return;
     const label = kind === "error" ? "ERROR on the server" : kind === "browser" ? "CRASH on a phone or browser" : "REFUSED a request";
@@ -117,10 +117,27 @@ ${cut(fields.stack, 900)}` : ""
   function onRequestError2(error, request, context) {
     reportError2(`${request.method} ${context.routePath ?? request.path}`, error, { routeType: context.routeType, routerKind: context.routerKind });
   }
-  return { reportError: reportError2, reportRejected: reportRejected2, reportBrowserError: reportBrowserError2, handleBrowserErrorReport: handleBrowserErrorReport2, handleErrorReportTest: handleErrorReportTest2, onRequestError: onRequestError2 };
+  let watching = false;
+  function watchConsole2() {
+    if (watching) return;
+    watching = true;
+    const original = console.error.bind(console);
+    console.error = (...args) => {
+      original(...args);
+      try {
+        if (typeof args[0] === "string" && /^\[(error|rejected|browser|telegram)\]/.test(args[0])) return;
+        const error = args.find((a) => a instanceof Error);
+        if (!error) return;
+        const label = typeof args[0] === "string" ? args[0].replace(/[\s:]+$/, "") : "logged error";
+        reportError2(label, error, { logged: true });
+      } catch {
+      }
+    };
+  }
+  return { reportError: reportError2, reportRejected: reportRejected2, reportBrowserError: reportBrowserError2, handleBrowserErrorReport: handleBrowserErrorReport2, handleErrorReportTest: handleErrorReportTest2, onRequestError: onRequestError2, watchConsole: watchConsole2 };
 }
 var watchtower = createWatchtower();
-var { reportError, reportRejected, reportBrowserError, handleBrowserErrorReport, handleErrorReportTest, onRequestError } = watchtower;
+var { reportError, reportRejected, reportBrowserError, handleBrowserErrorReport, handleErrorReportTest, onRequestError, watchConsole } = watchtower;
 
 export {
   createWatchtower,
@@ -129,5 +146,6 @@ export {
   reportBrowserError,
   handleBrowserErrorReport,
   handleErrorReportTest,
-  onRequestError
+  onRequestError,
+  watchConsole
 };

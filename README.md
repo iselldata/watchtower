@@ -73,6 +73,29 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
 }
 ```
 
+Two more lines catch what the hooks above cannot:
+
+`instrumentation.ts`, inside `register()`: many routes catch their own errors, log them with `console.error` and answer 500, which
+Next counts as handled. `watchConsole()` makes any `Error` that is logged that way reach Telegram too.
+
+```ts
+export async function register() {
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { watchConsole } = await import("@demonbloodx2/watchtower");
+    watchConsole();
+  }
+}
+```
+
+`app/layout.tsx`, inside `<body>`: errors on the page that no error screen sees, such as a button handler that throws. It skips
+browser extensions and lost connections, sends each message once, and at most five a page.
+
+```tsx
+import { WatchtowerListener } from "@demonbloodx2/watchtower/react";
+// ...
+<WatchtowerListener />
+```
+
 Deploy, then open `https://your-app/api/report-error?test=<your chat id>`. One message arrives in Telegram. A wrong chat id gets a
 404, so a stranger cannot set it off.
 

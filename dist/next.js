@@ -1,10 +1,12 @@
 import {
   handleBrowserErrorReport,
   handleErrorReportTest,
-  onRequestError
-} from "./chunk-44HE7URX.js";
+  onRequestError,
+  watchConsole
+} from "./chunk-VYTZAB5W.js";
 export {
   handleErrorReportTest as GET,
   handleBrowserErrorReport as POST,
-  onRequestError
+  onRequestError,
+  watchConsole
 };

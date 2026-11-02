@@ -75,3 +75,30 @@ test("the test page needs the chat id", async () => {
   assert.equal((await w.handleErrorReportTest(new Request("http://x/api/report-error?test=42"))).status, 200);
   assert.equal(sent.length, 1);
 });
+
+test("watchConsole reports a logged Error once, and ignores its own lines and plain messages", async () => {
+  const original = { error: console.error, warn: console.warn };
+  const { w, sent } = make();
+  console.error = () => {};
+  console.warn = () => {};
+  w.watchConsole();
+  console.error("Failed to create order:", new Error("Mongo went away"));
+  console.error("Failed to create order:", new Error("Mongo went away"));
+  console.error("just a message with no error in it");
+  console.error("[error] {\"where\":\"x\"}", new Error("ours"));
+  await settle();
+  console.error = original.error;
+  console.warn = original.warn;
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /Where: Failed to create order/);
+  assert.match(sent[0], /Mongo went away/);
+});
+
+test("the same error from two places is one message", async () => {
+  quiet();
+  const { w, sent } = make();
+  w.reportError("GET /a", new Error("Same thing"));
+  w.reportError("Failed to load:", new Error("Same thing"));
+  await settle();
+  assert.equal(sent.length, 1);
+});

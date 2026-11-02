@@ -1,6 +1,6 @@
 {
   "name": "@demonbloodx2/watchtower",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Tells you when your app breaks. Writes every error, crash and refused request to the logs and sends it to a Telegram chat, with repeats counted instead of repeated. No dependencies. Works in Next and in any Node app.",
   "license": "MIT",
   "type": "module",
