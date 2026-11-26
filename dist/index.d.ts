@@ -5,8 +5,10 @@ interface WatchtowerOptions {
     app?: string;
     quietMs?: number;
     perMinute?: number;
+    who?: () => Who | undefined | Promise<Who | undefined>;
     fetch?: typeof fetch;
 }
+type Who = Record<string, string | undefined>;
 interface Issue {
     path: (string | number)[];
     message: string;
@@ -26,6 +28,7 @@ declare function createWatchtower(options?: WatchtowerOptions): {
         routeType?: string;
     }) => void;
     watchConsole: () => void;
+    setWho: (fn: WatchtowerOptions["who"]) => void;
 };
 declare const reportError: (where: string, error: unknown, extra?: Record<string, unknown>) => void;
 declare const reportRejected: (where: string, issues: Issue[]) => void;
@@ -41,5 +44,6 @@ declare const onRequestError: (error: unknown, request: {
     routeType?: string;
 }) => void;
 declare const watchConsole: () => void;
+declare const setWho: (fn: WatchtowerOptions["who"]) => void;
 
-export { type Issue, type Kind, type WatchtowerOptions, createWatchtower, handleBrowserErrorReport, handleErrorReportTest, onRequestError, reportBrowserError, reportError, reportRejected, watchConsole };
+export { type Issue, type Kind, type WatchtowerOptions, type Who, createWatchtower, handleBrowserErrorReport, handleErrorReportTest, onRequestError, reportBrowserError, reportError, reportRejected, setWho, watchConsole };

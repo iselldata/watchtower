@@ -102,3 +102,32 @@ test("the same error from two places is one message", async () => {
   await settle();
   assert.equal(sent.length, 1);
 });
+
+test("a message names who it happened to, and a repeat lists the others", async () => {
+  quiet();
+  let n = 0;
+  const people = [{ Shop: "Ama's Gadgets", Person: "Ama Mensah", Email: "ama@example.com" }, { Shop: "Kofi Store", Person: "Kofi Boateng", Email: "kofi@example.com" }];
+  const { w, sent } = make({ quietMs: 50, who: () => people[n++ % 2] });
+  w.reportError("POST /api/upload", new Error("Cut off"));
+  await settle();
+  w.reportError("POST /api/upload", new Error("Cut off"));
+  await settle();
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /Shop: Ama's Gadgets/);
+  assert.match(sent[0], /Person: Ama Mensah/);
+  assert.match(sent[0], /Email: ama@example\.com/);
+  await new Promise((r) => setTimeout(r, 60));
+  w.reportError("POST /api/upload", new Error("Cut off"));
+  await settle();
+  assert.equal(sent.length, 2);
+  assert.match(sent[1], /Also happened 1 more time since the last message, to: Kofi Store, Kofi Boateng/);
+});
+
+test("a who that fails or is slow does not stop the message", async () => {
+  quiet();
+  const { w, sent } = make({ who: () => { throw new Error("no session"); } });
+  w.reportError("GET /x", new Error("Broke"));
+  await settle();
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /Message: Broke/);
+});

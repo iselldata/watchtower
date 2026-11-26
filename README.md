@@ -114,6 +114,25 @@ If you use a custom middleware that asks people to sign in, let `/api/report-err
 />
 ```
 
+## Say who it happened to
+
+So you know who to reach out to, to ask them to try again or to say sorry, each message can name the shop and the person who was signed in.
+Give watchtower a function that says so, once, when the server starts (`instrumentation.ts`, inside `register()`):
+
+```ts
+const { watchConsole, setWho } = await import("@demonbloodx2/watchtower");
+watchConsole();
+setWho(async () => ({
+  Shop: "Ama's Gadgets, ama.example.com",
+  "Signed in": "Ama Mensah, ama@example.com, +233241234567",
+}));
+```
+
+Each entry becomes a line in the message. The function runs inside the request that failed, so it can read the session and the shop from that
+request. It has a second and a half; when it fails or is slow the message goes out without it. When the same problem repeats it is still sent
+once, and the next message lists the others it also happened to, so nobody is missed. Only put in what you already hold about the person,
+never what they typed.
+
 ## Refused requests
 
 Pass a zod error's issues straight in:

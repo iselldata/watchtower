@@ -3,7 +3,7 @@ import {
   handleErrorReportTest,
   onRequestError,
   watchConsole
-} from "./chunk-VYTZAB5W.js";
+} from "./chunk-JZUMYRKT.js";
 export {
   handleErrorReportTest as GET,
   handleBrowserErrorReport as POST,

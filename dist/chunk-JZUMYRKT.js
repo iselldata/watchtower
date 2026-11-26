@@ -9,14 +9,21 @@ function createWatchtower(options = {}) {
   const send = options.fetch ?? ((...args) => fetch(...args));
   const app = () => options.app ?? env("VERCEL_PROJECT_PRODUCTION_URL") ?? env("VERCEL_URL") ?? "local";
   const seen = /* @__PURE__ */ new Map();
+  let whoFn = options.who;
   let windowStart = 0;
   let sentInWindow = 0;
-  function allowed(key) {
+  const person = (who) => {
+    if (!who) return "";
+    const entries = Object.values(who).filter((v) => !!v);
+    return entries.slice(0, 2).join(", ");
+  };
+  function allowed(key, who) {
     const now = Date.now();
     const before = seen.get(key);
     if (before && now - before.sentAt < quietMs) {
       before.held += 1;
-      return { send: false, held: 0 };
+      if (who && !before.people.includes(who) && before.people.length < 6) before.people.push(who);
+      return { send: false, held: 0, people: [] };
     }
     if (now - windowStart > 6e4) {
       windowStart = now;
@@ -24,18 +31,27 @@ function createWatchtower(options = {}) {
     }
     if (sentInWindow >= perMinute) {
       if (before) before.held += 1;
-      return { send: false, held: 0 };
+      return { send: false, held: 0, people: [] };
     }
     sentInWindow += 1;
     const held = before?.held ?? 0;
-    seen.set(key, { sentAt: now, held: 0 });
+    const people = before?.people ?? [];
+    seen.set(key, { sentAt: now, held: 0, people: [] });
     if (seen.size > 200) {
       for (const k of seen.keys()) {
         seen.delete(k);
         if (seen.size <= 100) break;
       }
     }
-    return { send: true, held };
+    return { send: true, held, people };
+  }
+  async function resolveWho() {
+    if (!whoFn) return void 0;
+    try {
+      return await Promise.race([Promise.resolve(whoFn()), new Promise((done) => setTimeout(() => done(void 0), 1500))]);
+    } catch {
+      return void 0;
+    }
   }
   async function post(text) {
     const t = token();
@@ -58,25 +74,29 @@ function createWatchtower(options = {}) {
   }
   function tell(kind, fields) {
     if (!token() || !chat()) return;
-    const key = (kind === "rejected" ? `${kind}|${cut(fields.where, 80)}|${JSON.stringify(fields.issues ?? "")}` : `${kind}|${cut(fields.message, 120)}`).slice(0, 300);
-    const turn = allowed(key);
-    if (!turn.send) return;
-    const label = kind === "error" ? "ERROR on the server" : kind === "browser" ? "CRASH on a phone or browser" : "REFUSED a request";
-    const vercelEnv = env("VERCEL_ENV");
-    const sha = env("VERCEL_GIT_COMMIT_SHA");
-    const rows = [
-      label,
-      `${app()}${vercelEnv ? ` (${vercelEnv})` : ""}${sha ? ` ${sha.slice(0, 7)}` : ""}`,
-      `Where: ${cut(fields.where, 200)}`,
-      fields.message ? `Message: ${cut(fields.message, 400)}` : "",
-      Array.isArray(fields.issues) ? `Fields: ${fields.issues.map((i) => `${i.field}: ${i.message}`).join("; ")}` : "",
-      fields.digest ? `Digest: ${fields.digest}` : "",
-      fields.userAgent ? `Device: ${fields.userAgent}` : "",
-      turn.held > 0 ? `Also happened ${turn.held} more time${turn.held === 1 ? "" : "s"} since the last message.` : "",
-      fields.stack ? `
+    const work = (async () => {
+      const who = await resolveWho();
+      const key = (kind === "rejected" ? `${kind}|${cut(fields.where, 80)}|${JSON.stringify(fields.issues ?? "")}` : `${kind}|${cut(fields.message, 120)}`).slice(0, 300);
+      const turn = allowed(key, person(who));
+      if (!turn.send) return;
+      const label = kind === "error" ? "ERROR on the server" : kind === "browser" ? "CRASH on a phone or browser" : "REFUSED a request";
+      const vercelEnv = env("VERCEL_ENV");
+      const sha = env("VERCEL_GIT_COMMIT_SHA");
+      const rows = [
+        label,
+        `${app()}${vercelEnv ? ` (${vercelEnv})` : ""}${sha ? ` ${sha.slice(0, 7)}` : ""}`,
+        ...who ? Object.entries(who).filter(([, v]) => !!v).map(([k, v]) => `${k}: ${cut(v, 160)}`) : [],
+        `Where: ${cut(fields.where, 200)}`,
+        fields.message ? `Message: ${cut(fields.message, 400)}` : "",
+        Array.isArray(fields.issues) ? `Fields: ${fields.issues.map((i) => `${i.field}: ${i.message}`).join("; ")}` : "",
+        fields.digest ? `Digest: ${fields.digest}` : "",
+        fields.userAgent ? `Device: ${fields.userAgent}` : "",
+        turn.held > 0 ? `Also happened ${turn.held} more time${turn.held === 1 ? "" : "s"} since the last message${turn.people.length ? `, to: ${turn.people.join(" | ")}` : ""}.` : "",
+        fields.stack ? `
 ${cut(fields.stack, 900)}` : ""
-    ].filter(Boolean);
-    const work = post(rows.join("\n"));
+      ].filter(Boolean);
+      await post(rows.join("\n"));
+    })();
     keepAlive(work);
     void work;
   }
@@ -134,10 +154,13 @@ ${cut(fields.stack, 900)}` : ""
       }
     };
   }
-  return { reportError: reportError2, reportRejected: reportRejected2, reportBrowserError: reportBrowserError2, handleBrowserErrorReport: handleBrowserErrorReport2, handleErrorReportTest: handleErrorReportTest2, onRequestError: onRequestError2, watchConsole: watchConsole2 };
+  function setWho2(fn) {
+    whoFn = fn;
+  }
+  return { reportError: reportError2, reportRejected: reportRejected2, reportBrowserError: reportBrowserError2, handleBrowserErrorReport: handleBrowserErrorReport2, handleErrorReportTest: handleErrorReportTest2, onRequestError: onRequestError2, watchConsole: watchConsole2, setWho: setWho2 };
 }
 var watchtower = createWatchtower();
-var { reportError, reportRejected, reportBrowserError, handleBrowserErrorReport, handleErrorReportTest, onRequestError, watchConsole } = watchtower;
+var { reportError, reportRejected, reportBrowserError, handleBrowserErrorReport, handleErrorReportTest, onRequestError, watchConsole, setWho } = watchtower;
 
 export {
   createWatchtower,
@@ -147,5 +170,6 @@ export {
   handleBrowserErrorReport,
   handleErrorReportTest,
   onRequestError,
-  watchConsole
+  watchConsole,
+  setWho
 };

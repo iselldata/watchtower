@@ -15,9 +15,17 @@ export interface WatchtowerOptions {
   quietMs?: number;
   // The most messages that go out in a minute from one server. Default 12.
   perMinute?: number;
+  // Says who was affected and where, so the owner knows who to reach out to. Called when a problem is reported, inside the request that
+  // caused it, so it can read the signed in person and the shop from the request. Each entry is a label and a value, shown in the
+  // message in the order given ({ Shop: "Ama's Gadgets", Person: "Ama Mensah", Email: "ama@example.com" }). The first entry is the one the
+  // problem is counted by when it repeats, so a person is named once and the others are listed as "also". It is given a second and a half,
+  // and when it fails or is slow the message goes out without it.
+  who?: () => Who | undefined | Promise<Who | undefined>;
   // For tests: stands in for fetch when talking to Telegram.
   fetch?: typeof fetch;
 }
+
+export type Who = Record<string, string | undefined>;
 
 export interface Issue {
   path: (string | number)[];
@@ -36,16 +44,25 @@ export function createWatchtower(options: WatchtowerOptions = {}) {
   const app = () => options.app ?? env("VERCEL_PROJECT_PRODUCTION_URL") ?? env("VERCEL_URL") ?? "local";
 
   // Each server keeps its own count, which is enough to stop one bug on a busy shop being a flood.
-  const seen = new Map<string, { sentAt: number; held: number }>();
+  const seen = new Map<string, { sentAt: number; held: number; people: string[] }>();
+  let whoFn = options.who;
   let windowStart = 0;
   let sentInWindow = 0;
 
-  function allowed(key: string): { send: boolean; held: number } {
+  // Who it happened to, in one short text, so a repeat can name the others it also happened to.
+  const person = (who: Who | undefined) => {
+    if (!who) return "";
+    const entries = Object.values(who).filter((v): v is string => !!v);
+    return entries.slice(0, 2).join(", ");
+  };
+
+  function allowed(key: string, who?: string): { send: boolean; held: number; people: string[] } {
     const now = Date.now();
     const before = seen.get(key);
     if (before && now - before.sentAt < quietMs) {
       before.held += 1;
-      return { send: false, held: 0 };
+      if (who && !before.people.includes(who) && before.people.length < 6) before.people.push(who);
+      return { send: false, held: 0, people: [] };
     }
     if (now - windowStart > 60_000) {
       windowStart = now;
@@ -53,11 +70,12 @@ export function createWatchtower(options: WatchtowerOptions = {}) {
     }
     if (sentInWindow >= perMinute) {
       if (before) before.held += 1;
-      return { send: false, held: 0 };
+      return { send: false, held: 0, people: [] };
     }
     sentInWindow += 1;
     const held = before?.held ?? 0;
-    seen.set(key, { sentAt: now, held: 0 });
+    const people = before?.people ?? [];
+    seen.set(key, { sentAt: now, held: 0, people: [] });
     // The list of what has been seen does not grow without end.
     if (seen.size > 200) {
       for (const k of seen.keys()) {
@@ -65,7 +83,16 @@ export function createWatchtower(options: WatchtowerOptions = {}) {
         if (seen.size <= 100) break;
       }
     }
-    return { send: true, held };
+    return { send: true, held, people };
+  }
+
+  async function resolveWho(): Promise<Who | undefined> {
+    if (!whoFn) return undefined;
+    try {
+      return await Promise.race([Promise.resolve(whoFn()), new Promise<undefined>((done) => setTimeout(() => done(undefined), 1500))]);
+    } catch {
+      return undefined;
+    }
   }
 
   // Sent after the answer has gone, where the host lets work carry on past it, so nobody waits on Telegram. A failure is only logged.
@@ -93,26 +120,31 @@ export function createWatchtower(options: WatchtowerOptions = {}) {
 
   function tell(kind: Kind, fields: Record<string, unknown>) {
     if (!token() || !chat()) return;
-    // A crash is the same problem wherever it surfaced (the route that failed, the log line that mentioned it), so it is counted by its
-    // message; a refused request is told apart by the route and the fields.
-    const key = (kind === "rejected" ? `${kind}|${cut(fields.where, 80)}|${JSON.stringify(fields.issues ?? "")}` : `${kind}|${cut(fields.message, 120)}`).slice(0, 300);
-    const turn = allowed(key);
-    if (!turn.send) return;
-    const label = kind === "error" ? "ERROR on the server" : kind === "browser" ? "CRASH on a phone or browser" : "REFUSED a request";
-    const vercelEnv = env("VERCEL_ENV");
-    const sha = env("VERCEL_GIT_COMMIT_SHA");
-    const rows = [
-      label,
-      `${app()}${vercelEnv ? ` (${vercelEnv})` : ""}${sha ? ` ${sha.slice(0, 7)}` : ""}`,
-      `Where: ${cut(fields.where, 200)}`,
-      fields.message ? `Message: ${cut(fields.message, 400)}` : "",
-      Array.isArray(fields.issues) ? `Fields: ${(fields.issues as { field: string; message: string }[]).map((i) => `${i.field}: ${i.message}`).join("; ")}` : "",
-      fields.digest ? `Digest: ${fields.digest}` : "",
-      fields.userAgent ? `Device: ${fields.userAgent}` : "",
-      turn.held > 0 ? `Also happened ${turn.held} more time${turn.held === 1 ? "" : "s"} since the last message.` : "",
-      fields.stack ? `\n${cut(fields.stack, 900)}` : "",
-    ].filter(Boolean);
-    const work = post(rows.join("\n"));
+    // Started at once, inside the request that caused the problem, so who() can still read that request.
+    const work = (async () => {
+      const who = await resolveWho();
+      // A crash is the same problem wherever it surfaced (the route that failed, the log line that mentioned it), so it is counted by its
+      // message; a refused request is told apart by the route and the fields.
+      const key = (kind === "rejected" ? `${kind}|${cut(fields.where, 80)}|${JSON.stringify(fields.issues ?? "")}` : `${kind}|${cut(fields.message, 120)}`).slice(0, 300);
+      const turn = allowed(key, person(who));
+      if (!turn.send) return;
+      const label = kind === "error" ? "ERROR on the server" : kind === "browser" ? "CRASH on a phone or browser" : "REFUSED a request";
+      const vercelEnv = env("VERCEL_ENV");
+      const sha = env("VERCEL_GIT_COMMIT_SHA");
+      const rows = [
+        label,
+        `${app()}${vercelEnv ? ` (${vercelEnv})` : ""}${sha ? ` ${sha.slice(0, 7)}` : ""}`,
+        ...(who ? Object.entries(who).filter(([, v]) => !!v).map(([k, v]) => `${k}: ${cut(v, 160)}`) : []),
+        `Where: ${cut(fields.where, 200)}`,
+        fields.message ? `Message: ${cut(fields.message, 400)}` : "",
+        Array.isArray(fields.issues) ? `Fields: ${(fields.issues as { field: string; message: string }[]).map((i) => `${i.field}: ${i.message}`).join("; ")}` : "",
+        fields.digest ? `Digest: ${fields.digest}` : "",
+        fields.userAgent ? `Device: ${fields.userAgent}` : "",
+        turn.held > 0 ? `Also happened ${turn.held} more time${turn.held === 1 ? "" : "s"} since the last message${turn.people.length ? `, to: ${turn.people.join(" | ")}` : ""}.` : "",
+        fields.stack ? `\n${cut(fields.stack, 900)}` : "",
+      ].filter(Boolean);
+      await post(rows.join("\n"));
+    })();
     keepAlive(work);
     void work;
   }
@@ -192,9 +224,14 @@ export function createWatchtower(options: WatchtowerOptions = {}) {
     };
   }
 
-  return { reportError, reportRejected, reportBrowserError, handleBrowserErrorReport, handleErrorReportTest, onRequestError, watchConsole };
+  // For an app to say, once when it starts, how to find out who a problem happened to (see the `who` option).
+  function setWho(fn: WatchtowerOptions["who"]) {
+    whoFn = fn;
+  }
+
+  return { reportError, reportRejected, reportBrowserError, handleBrowserErrorReport, handleErrorReportTest, onRequestError, watchConsole, setWho };
 }
 
 // The one most apps need, reading its keys from the environment.
 const watchtower = createWatchtower();
-export const { reportError, reportRejected, reportBrowserError, handleBrowserErrorReport, handleErrorReportTest, onRequestError, watchConsole } = watchtower;
+export const { reportError, reportRejected, reportBrowserError, handleBrowserErrorReport, handleErrorReportTest, onRequestError, watchConsole, setWho } = watchtower;
