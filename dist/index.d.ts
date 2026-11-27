@@ -6,9 +6,16 @@ interface WatchtowerOptions {
     quietMs?: number;
     perMinute?: number;
     who?: () => Who | undefined | Promise<Who | undefined>;
+    explain?: Explanation[];
     fetch?: typeof fetch;
 }
 type Who = Record<string, string | undefined>;
+interface Explanation {
+    match: RegExp;
+    means: string;
+    todo?: string;
+}
+declare const KNOWN: Explanation[];
 interface Issue {
     path: (string | number)[];
     message: string;
@@ -46,4 +53,4 @@ declare const onRequestError: (error: unknown, request: {
 declare const watchConsole: () => void;
 declare const setWho: (fn: WatchtowerOptions["who"]) => void;
 
-export { type Issue, type Kind, type WatchtowerOptions, type Who, createWatchtower, handleBrowserErrorReport, handleErrorReportTest, onRequestError, reportBrowserError, reportError, reportRejected, setWho, watchConsole };
+export { type Explanation, type Issue, KNOWN, type Kind, type WatchtowerOptions, type Who, createWatchtower, handleBrowserErrorReport, handleErrorReportTest, onRequestError, reportBrowserError, reportError, reportRejected, setWho, watchConsole };

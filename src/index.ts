@@ -21,11 +21,55 @@ export interface WatchtowerOptions {
   // problem is counted by when it repeats, so a person is named once and the others are listed as "also". It is given a second and a half,
   // and when it fails or is slow the message goes out without it.
   who?: () => Who | undefined | Promise<Who | undefined>;
+  // Plain-words explanations of this app's own problems, looked at before the common ones in KNOWN.
+  explain?: Explanation[];
   // For tests: stands in for fetch when talking to Telegram.
   fetch?: typeof fetch;
 }
 
 export type Who = Record<string, string | undefined>;
+
+// A problem put in plain words: what it means for the person it happened to, and what to do about it. A message that matches one of these
+// leads with those two lines, and the technical part follows underneath for whoever fixes it.
+export interface Explanation {
+  match: RegExp;
+  means: string;
+  todo?: string;
+}
+
+// The common ones, so an alert reads as a sentence and not as a stack of code. An app adds its own through the `explain` option, which is looked at first.
+export const KNOWN: Explanation[] = [
+  {
+    match: /removeChild|insertBefore|not a child of this node/i,
+    means: "The page stopped because the phone's own translator, or an add-on, rewrote the words on it.",
+    todo: "Ask them to switch off Translate (or open the page in another browser) and try again.",
+  },
+  {
+    match: /ChunkLoadError|Loading chunk .* failed|dynamically imported module/i,
+    means: "Their phone was holding an old copy of the app from before an update and could not load a part of the new one.",
+    todo: "Ask them to refresh the page. Nothing is broken on our side.",
+  },
+  {
+    match: /hydrat/i,
+    means: "The page looked different when it reached their phone from how we sent it, often because of a translator or an add-on.",
+    todo: "Ask them to refresh, or to switch off Translate, and try again.",
+  },
+  {
+    match: /FormData|Unexpected end of form|body.*(aborted|cut off)|premature close/i,
+    means: "Something they were sending was cut off on the way, usually a weak connection.",
+    todo: "Ask them to try again, on better signal or Wi-Fi.",
+  },
+  {
+    match: /MongoServerSelection|MongoNetwork|MongoTimeout|ECONNREFUSED|ETIMEDOUT|ENOTFOUND/i,
+    means: "The database did not answer for a moment.",
+    todo: "It usually passes by itself. If it keeps coming, look at the database.",
+  },
+  {
+    match: /Cannot read propert|is not a function|is not defined|undefined is not an object/i,
+    means: "A mistake in our own code: a screen asked for something that was not there. It is not their fault.",
+    todo: "Tell them we are on it, and send this whole message to whoever builds the app.",
+  },
+];
 
 export interface Issue {
   path: (string | number)[];
@@ -131,10 +175,18 @@ export function createWatchtower(options: WatchtowerOptions = {}) {
       const label = kind === "error" ? "ERROR on the server" : kind === "browser" ? "CRASH on a phone or browser" : "REFUSED a request";
       const vercelEnv = env("VERCEL_ENV");
       const sha = env("VERCEL_GIT_COMMIT_SHA");
+      // What it means and what to do come first, in plain words, then who to reach, then the technical part.
+      const known = [...(options.explain ?? []), ...KNOWN].find((e) => e.match.test(`${fields.message ?? ""} ${fields.stack ?? ""}`));
+      const plain = kind === "rejected"
+        ? ["What it means: A request was turned away because a box was empty or not filled in the way we need.", "What to do: Nothing yet. If the same one keeps coming, that form is probably unclear and should be made simpler."]
+        : known
+        ? [`What it means: ${known.means}`, known.todo ? `What to do: ${known.todo}` : ""]
+        : ["What it means: Not one we know yet.", "What to do: Send this whole message to whoever builds the app."];
       const rows = [
         label,
         `${app()}${vercelEnv ? ` (${vercelEnv})` : ""}${sha ? ` ${sha.slice(0, 7)}` : ""}`,
-        ...(who ? Object.entries(who).filter(([, v]) => !!v).map(([k, v]) => `${k}: ${cut(v, 160)}`) : []),
+        ...plain,
+        ...(who ? Object.entries(who).filter(([, v]) => !!v).map(([k, v]) => `${k}: ${cut(v, 200)}`) : []),
         `Where: ${cut(fields.where, 200)}`,
         fields.message ? `Message: ${cut(fields.message, 400)}` : "",
         Array.isArray(fields.issues) ? `Fields: ${(fields.issues as { field: string; message: string }[]).map((i) => `${i.field}: ${i.message}`).join("; ")}` : "",

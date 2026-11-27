@@ -131,3 +131,32 @@ test("a who that fails or is slow does not stop the message", async () => {
   assert.equal(sent.length, 1);
   assert.match(sent[0], /Message: Broke/);
 });
+
+test("a known problem leads with what it means and what to do, in plain words, before the technical part", async () => {
+  const sent = [];
+  const { reportBrowserError } = createWatchtower({ token: "t", chatId: "c", app: "x", fetch: async (_url, init) => { sent.push(JSON.parse(init.body).text); return new Response("{}"); } });
+  reportBrowserError({ where: "/start", message: "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node." }, "Android");
+  await new Promise((r) => setTimeout(r, 30));
+  const lines = sent[0].split("\n");
+  assert.match(lines[2], /^What it means: .*translator/);
+  assert.match(lines[3], /^What to do: Ask them to switch off Translate/);
+  assert.ok(lines.findIndex((l) => l.startsWith("Where:")) > 3);
+});
+
+test("a problem nobody has explained yet says so, and a refused request is told apart", async () => {
+  const sent = [];
+  const { reportError, reportRejected } = createWatchtower({ token: "t", chatId: "c", app: "x", fetch: async (_url, init) => { sent.push(JSON.parse(init.body).text); return new Response("{}"); } });
+  reportError("GET /x", new Error("Something entirely new"));
+  reportRejected("POST /y", [{ path: ["name"], message: "Required" }]);
+  await new Promise((r) => setTimeout(r, 30));
+  assert.match(sent[0], /What it means: Not one we know yet\./);
+  assert.match(sent[1], /What it means: A request was turned away/);
+});
+
+test("an app's own explanation is used before the common ones", async () => {
+  const sent = [];
+  const { reportError } = createWatchtower({ token: "t", chatId: "c", app: "x", explain: [{ match: /Paystack/, means: "Paystack did not answer.", todo: "Try again in a minute." }], fetch: async (_url, init) => { sent.push(JSON.parse(init.body).text); return new Response("{}"); } });
+  reportError("POST /pay", new Error("Paystack timed out, Cannot read properties of undefined"));
+  await new Promise((r) => setTimeout(r, 30));
+  assert.match(sent[0], /What it means: Paystack did not answer\./);
+});

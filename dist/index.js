@@ -1,4 +1,5 @@
 import {
+  KNOWN,
   createWatchtower,
   handleBrowserErrorReport,
   handleErrorReportTest,
@@ -8,8 +9,9 @@ import {
   reportRejected,
   setWho,
   watchConsole
-} from "./chunk-JZUMYRKT.js";
+} from "./chunk-AGFEEDNW.js";
 export {
+  KNOWN,
   createWatchtower,
   handleBrowserErrorReport,
   handleErrorReportTest,
